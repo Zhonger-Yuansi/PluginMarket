@@ -26,11 +26,10 @@ class DJTable(Plugin):
         if TYPE_CHECKING:
             from pip模块支持 import PipSupport
             pip: PipSupport
-        pip.require({"beautifulsoup4": "bs4"})
         pip.require({"lxml": "lxml"})
         
-        global BeautifulSoup
-        from bs4 import BeautifulSoup
+        global etree
+        from lxml import etree # type: ignore
         
         self.midiplayer = self.GetPluginAPI("MIDI播放器")
         self.chatmenu = self.GetPluginAPI("聊天栏菜单")
@@ -111,10 +110,10 @@ class DJTable(Plugin):
             response.raise_for_status()
             
             # 解析 HTML 并提取音乐信息
-            soup = BeautifulSoup(response.text, 'html.parser')
+            tree = etree.HTML(response.text)
             
             # 查找所有音乐项
-            music_items = soup.find_all('a', class_='d-block border-bottom pb-5 mb-5 position-relative')
+            music_items = tree.xpath('//div[@id="search-result"]/div/a[@class="d-block border-bottom pb-5 mb-5 position-relative"]')
             
             return music_items
         except Exception as e:
@@ -130,40 +129,36 @@ class DJTable(Plugin):
         player.show("§e点歌§f>> §a网络搜索到以下结果：")
         
         # 提取并显示关键信息
-        for i, item in enumerate(music_items[:5]):
-            if hasattr(item, 'find'):
-                # 提取标题
-                title_elem = item.find('h3')
-                title = title_elem.get_text(strip=True) if (title_elem and hasattr(title_elem, 'get_text')) else "未知标题"
-                
-                # 提取信息（包含下载次数）
-                info_elem = item.find('div', class_='small text-muted')
-                info_text = info_elem.get_text(strip=True) if (info_elem and hasattr(info_elem, 'get_text')) else ""
-                
-                # 提取文件信息（包含打分、时长）
-                file_info_elem = item.find('div', class_='row small text-muted pl-0 pl-md-9')
-                file_info_text = file_info_elem.get_text(strip=True) if (file_info_elem and hasattr(file_info_elem, 'get_text')) else ""
-                
-                # 提取下载次数
-                download_count = ""
-                download_match = re.search(r'(\d+)次下载', info_text)
-                if download_match:
-                    download_count = download_match.group(1)
-                
-                # 提取打分
-                rating = ""
-                rating_match = re.search(r'(\d+\.\d+)\(\d+人打分\)', file_info_text)
-                if rating_match:
-                    rating = rating_match.group(1)
-                
-                # 提取时长
-                duration = ""
-                duration_match = re.search(r'(\d+:\d+)', file_info_text)
-                if duration_match:
-                    duration = duration_match.group(1)
-                
-                # 显示简化信息
-                player.show(f"§e点歌§f>> §b{i+1}. §f{title} §7[下载: {download_count}次, 评分: {rating}, 时长: {duration}]")
+        for i, item in enumerate(music_items[:10]):
+            # 提取标题
+            title = item.xpath('.//h3')[0].xpath('string()').strip() if item.xpath('.//h3') else "未知标题"
+            
+            # 提取信息（包含下载次数）
+            info_text = item.xpath('.//div[@class="small text-muted"]')[0].xpath('string()').strip() if item.xpath('.//div[@class="small text-muted"]') else ""
+            
+            # 提取文件信息（包含打分、时长）
+            file_info_text = item.xpath('.//div[@class="row small text-muted pl-0 pl-md-9"]')[0].xpath('string()').strip() if item.xpath('.//div[@class="row small text-muted pl-0 pl-md-9"]') else ""
+            
+            # 提取下载次数
+            download_count = ""
+            download_match = re.search(r'(\d+)次下载', info_text)
+            if download_match:
+                download_count = download_match.group(1)
+            
+            # 提取打分
+            rating = ""
+            rating_match = re.search(r'(\d+\.\d+)\(\d+人打分\)', file_info_text)
+            if rating_match:
+                rating = rating_match.group(1)
+            
+            # 提取时长
+            duration = ""
+            duration_match = re.search(r'(\d+:\d+)', file_info_text)
+            if duration_match:
+                duration = duration_match.group(1)
+            
+            # 显示简化信息
+            player.show(f"§e点歌§f>> §b{i+1}. §f{title} §7[下载: {download_count}次, 评分: {rating}, 时长: {duration}]")
         
         # 让玩家选择
         resp = player.input(
@@ -183,17 +178,16 @@ class DJTable(Plugin):
         # 验证输入
         try:
             choice = int(resp)
-            if 1 <= choice <= len(music_items[:5]):
+            if 1 <= choice <= len(music_items[:10]):
                 selected_item = music_items[choice-1]
                 
                 # 提取选中歌曲的标题
-                title_elem = selected_item.find('h3')
-                selected_title = title_elem.get_text(strip=True) if (title_elem and hasattr(title_elem, 'get_text')) else "未知标题"
+                selected_title = selected_item.xpath('.//h3')[0].xpath('string()').strip() if selected_item.xpath('.//h3') else "未知标题"
                 
                 player.show(f"§e点歌§f>> §a您选择了：{selected_title}")
                 
                 # 提取选中歌曲的链接
-                selected_link = selected_item.get('href') if hasattr(selected_item, 'get') else None
+                selected_link = selected_item.get('href')
                 if selected_link:
                     return selected_link, selected_title
                 else:
@@ -473,8 +467,5 @@ class DJTable(Plugin):
             self.main_thread = utils.createThread(
                 self.play_music, args=(song_name, player)
             )
-
-
-
 
 entry = plugin_entry(DJTable)
